@@ -11,7 +11,7 @@ First we read the training and the testing data, which are provided by the websi
 
 We only take the columns with specified data and filter out columns with too many NA values.
 
-```{r}
+```{r warnings = FALSE}
 download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "pml-training.csv", method="curl")
 download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "pml-testing.csv", method="curl")
 
@@ -32,7 +32,7 @@ rm(training_NA)
 
 We use the caret package for fitting prediction models to the data. To be able to reproduce our results, we set a seed. We divide the training data into a training and a validation set. We use 70 percent of the data for training, and 30 percent for model validation. The best performing model will then be used to predict on the test data set.
 
-```{r}
+```{r message = FALSE, warnings = FALSE}
 library(caret)
 set.seed(0815)
 
@@ -43,7 +43,7 @@ validate <- clean_training[-inTrain,]
 
 Since the outcome is a category variable, we try to fit models based on trees for prediction. We try a random forest, a bagged trees, and a boosted trees model.
 
-```{r}
+```{r message = FALSE, warning = FALSE, comment = FALSE, results= FALSE}
 modelRF <- train(classe ~ ., data = training, method="rf")
 modelTreeBag <- train(classe ~ ., data = training, method="treebag")
 modelGBM <- train(classe ~ ., data = training, method="gbm")
@@ -51,7 +51,7 @@ modelGBM <- train(classe ~ ., data = training, method="gbm")
 
 To see how effective the different models can predict, we try them on the validation data.
 
-```{r}
+```{r warnings = FALSE}
 predictRF <- predict(modelRF, validate)
 predictTreeBag <- predict(modelTreeBag, validate)
 predictGBM <- predict(modelGBM, validate)
@@ -65,19 +65,19 @@ With an accuracy of roughly 99 percent, random forest seems to be the best metho
 
 Now lets have a look at which recorded data have most impact on the prediction:
 
-```{r}
+```{r warnings = FALSE}
 varImp(modelRF)
 ```
 
 The roll belt and the pitch sensor on the forearm seem to deliver the most influencal data for our prediction. On the graph below, we can see that those two data sources provide a good basis for separation of classe data.
 
-```{r}
+```{r warnings = FALSE}
 qplot(roll_belt, pitch_forearm, color=classe, data=clean_training)
 ```
 
 For a last prediction model, we use all three model predictions to build a combined model and analyze its prediction capabilities. The combined model is built using a random forest again.
 
-```{r}
+```{r warnings = FALSE}
 combinedModelDF <- data.frame(predictRF, predictTreeBag, predictGBM, classe = validate$classe)
 modelCombined <- train(classe ~ ., data = combinedModelDF, method="rf")
 
@@ -85,9 +85,9 @@ predictCombined <- predict(modelCombined, combinedModelDF)
 confusionMatrix(predictCombined, validate$classe)$overall
 ```
 
-We conclude that the combined model performs exactly like the random forest model. Therefore, we construct predictions for the test data set with the random forest model alone.
+We conclude that the combined model performs a bit worse than the random forest model. Therefore, we construct predictions for the test data set with the random forest model alone.
 
-```{r}
+```{r warnings = FALSE}
 predict(modelRF, clean_testing)
 ```
 
