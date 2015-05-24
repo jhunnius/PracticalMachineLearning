@@ -5,18 +5,90 @@ date: "Saturday, May 23, 2015"
 output: html_document
 ---
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+In this data analysis, we try to create a model that can predict how well people perofrm a specifiefd exercise, based on measurements from accelerometers attached to their bodies.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+First we read the training and the testing data, which are provided by the website here: http://groupware.les.inf.puc-rio.br/har (explanations can be found in the section on the Weight Lifting Exercise Dataset)
+
+We only take the columns with specified data and filter out columns with too many NA values.
 
 ```{r}
-summary(cars)
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "pml-training.csv", method="curl")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "pml-testing.csv", method="curl")
+
+training_set <- read.csv("pml-training.csv", na.strings=c("NA", "#DIV/0!"), stringsAsFactors = FALSE)
+testing_set <- read.csv("pml-testing.csv", na.strings=c("NA", "#DIV/0!"), stringsAsFactors = FALSE)
+
+training_set$classe <- as.factor(training_set$classe)
+
+training_NA <- training_set[,colSums(is.na(training_set)) < 1000]
+clean_testing <- testing_set[,colSums(is.na(testing_set)) < 1000]
+
+clean_training <- training_NA[,8:60]
+
+rm(training_set)
+rm(testing_set)
+rm(training_NA)
 ```
 
-You can also embed plots, for example:
+We use the caret package for fitting prediction models to the data. To be able to reproduce our results, we set a seed. We divide the training data into a training and a validation set. We use 70 percent of the data for training, and 30 percent for model validation. The best performing model will then be used to predict on the test data set.
 
-```{r, echo=FALSE}
-plot(cars)
+```{r}
+library(caret)
+set.seed(0815)
+
+inTrain <- createDataPartition(y = clean_training$classe, p = 0.6, list = FALSE)
+training <- clean_training[inTrain,]
+validate <- clean_training[-inTrain,]
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Since the outcome is a category variable, we try to fit models based on trees for prediction. We try a random forest, a bagged trees, and a boosted trees model.
+
+```{r}
+modelRF <- train(classe ~ ., data = training, method="rf")
+modelTreeBag <- train(classe ~ ., data = training, method="treebag")
+modelGBM <- train(classe ~ ., data = training, method="gbm")
+```
+
+To see how effective the different models can predict, we try them on the validation data.
+
+```{r}
+predictRF <- predict(modelRF, validate)
+predictTreeBag <- predict(modelTreeBag, validate)
+predictGBM <- predict(modelGBM, validate)
+
+confusionMatrix(predictRF, validate$classe)$overall
+confusionMatrix(predictTreeBag, validate$classe)$overall
+confusionMatrix(predictGBM, validate$classe)$overall
+```
+
+With an accuracy of roughly 99 percent, random forest seems to be the best method to predict activity from the present data set, with tree bags a close second at 98 pecent accuarcy.
+
+Now lets have a look at which recorded data have most impact on the prediction:
+
+```{r}
+varImp(modelRF)
+```
+
+The roll belt and the pitch sensor on the forearm seem to deliver the most influencal data for our prediction. On the graph below, we can see that those two data sources provide a good basis for separation of classe data.
+
+```{r}
+qplot(roll_belt, pitch_forearm, color=classe, data=clean_training)
+```
+
+For a last prediction model, we use all three model predictions to build a combined model and analyze its prediction capabilities. The combined model is built using a random forest again.
+
+```{r}
+combinedModelDF <- data.frame(predictRF, predictTreeBag, predictGBM, classe = validate$classe)
+modelCombined <- train(classe ~ ., data = combinedModelDF, method="rf")
+
+predictCombined <- predict(modelCombined, combinedModelDF)
+confusionMatrix(predictCombined, validate$classe)$overall
+```
+
+We conclude that the combined model performs exactly like the random forest model. Therefore, we construct predictions for the test data set with the random forest model alone.
+
+```{r}
+predict(modelRF, clean_testing)
+```
+
+We estimate the out of sample error to be `r as.numeric(1 - confusionMatrix(predictRF, validate$classe)$overall[1])` (1 - the accuracy of our model trained with the training data set and validated against the validation data set).
